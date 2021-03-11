@@ -140,7 +140,7 @@ class Zlapp(Fudan):
 
         today = time.strftime("%Y%m%d", time.localtime())
 
-        if last_info["d"]["info"]["date"] == today:
+        if last_info["d"]["info"]["date"] != today:
             print("\n*******今日已提交*******")
             self.close()
         else:
@@ -163,11 +163,9 @@ class Zlapp(Fudan):
 
         geo_api_info = json_loads(self.last_info["geo_api_info"])
         
-        province = geo_api_info["addressComponent"].get("province", "")
-        city = geo_api_info["addressComponent"].get("city", "")
+        province = self.last_info["province"]
+        city = self.last_info["city"]
         district = geo_api_info["addressComponent"].get("district", "")
-        if(city.strip() == ''):
-            city = province
 
         self.last_info.update(
                 {
