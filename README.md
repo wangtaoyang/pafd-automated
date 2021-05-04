@@ -1,5 +1,7 @@
 # 自动填写 PAFD
 
+每60天要记得更新一下仓库
+
 credit: 这份代码受 [daily_fudan](https://github.com/k652/daily_fudan) 启发，并参考了其实现方式，在此表示感谢。
 
 首先请注册一个 GitHub 帐号，然后点击右上角的 fork 创建一个副本。
