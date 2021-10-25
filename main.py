@@ -1,11 +1,15 @@
+import json
 import time
 from json import loads as json_loads
 from os import path as os_path, getenv
 from sys import exit as sys_exit
 from getpass import getpass
 import re
+import base64
 
-from requests import session
+
+from requests import session, post
+
 
 class Fudan:
     """
@@ -15,8 +19,9 @@ class Fudan:
 
     # 初始化会话
     def __init__(self,
-                 uid, psw,
-                 url_login='https://uis.fudan.edu.cn/authserver/login'):
+                 uid, psw, code_id, code_psw,
+                 url_login='https://uis.fudan.edu.cn/authserver/login',
+                 url_code="https://zlapp.fudan.edu.cn/backend/default/code"):
         """
         初始化一个session，及登录信息
         :param uid: 学号
@@ -26,9 +31,12 @@ class Fudan:
         self.session = session()
         self.session.headers['User-Agent'] = self.UA
         self.url_login = url_login
+        self.url_code = url_code
 
         self.uid = uid
         self.psw = psw
+        self.code_id = code_id
+        self.code_psw = code_psw
 
     def _page_init(self):
         """
@@ -54,16 +62,16 @@ class Fudan:
         """
         page_login = self._page_init()
 
-
         print("getting tokens")
         data = {
             "username": self.uid,
             "password": self.psw,
-            "service" : "https://zlapp.fudan.edu.cn/site/ncov/fudanDaily"
+            "service": "https://zlapp.fudan.edu.cn/site/ncov/fudanDaily"
         }
 
         # 获取登录页上的令牌
-        result = re.findall('<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>', page_login)
+        result = re.findall(
+            '<input type="hidden" name="([a-zA-Z0-9\-_]+)" value="([a-zA-Z0-9\-_]+)"/?>', page_login)
         # print(result)
         # result 是一个列表，列表中的每一项是包含 name 和 value 的 tuple，例如
         # [('lt', 'LT-6711210-Ia3WttcMvLBWNBygRNHdNzHzB49jlQ1602983174755-7xmC-cas'), ('dllt', 'userNamePasswordLogin'), ('execution', 'e1s1'), ('_eventId', 'submit'), ('rmShown', '1')]
@@ -72,18 +80,18 @@ class Fudan:
         )
 
         headers = {
-            "Host"      : "uis.fudan.edu.cn",
-            "Origin"    : "https://uis.fudan.edu.cn",
-            "Referer"   : self.url_login,
+            "Host": "uis.fudan.edu.cn",
+            "Origin": "https://uis.fudan.edu.cn",
+            "Referer": self.url_login,
             "User-Agent": self.UA
         }
 
         print("◉Login ing——", end="")
         post = self.session.post(
-                self.url_login,
-                data=data,
-                headers=headers,
-                allow_redirects=False)
+            self.url_login,
+            data=data,
+            headers=headers,
+            allow_redirects=False)
 
         print("return status code", post.status_code)
 
@@ -118,6 +126,7 @@ class Fudan:
         print("************************")
         sys_exit(exit_code)
 
+
 class Zlapp(Fudan):
     last_info = ''
 
@@ -127,7 +136,7 @@ class Zlapp(Fudan):
         """
         print("◉检测是否已提交")
         get_info = self.session.get(
-                'https://zlapp.fudan.edu.cn/ncov/wap/fudan/get-info')
+            'https://zlapp.fudan.edu.cn/ncov/wap/fudan/get-info')
         last_info = get_info.json()
 
         print("◉上一次提交日期为:", last_info["d"]["info"]["date"])
@@ -137,7 +146,7 @@ class Zlapp(Fudan):
 
         print("◉上一次提交地址为:", position['formattedAddress'])
         # print("◉上一次提交GPS为", position["position"])
-
+        # print(last_info)
         today = time.strftime("%Y%m%d", time.localtime())
 
         if last_info["d"]["info"]["date"] == today:
@@ -147,15 +156,32 @@ class Zlapp(Fudan):
             print("\n\n*******未提交*******")
             self.last_info = last_info["d"]["oldInfo"]
 
+    def validate_code(self):
+        img = base64.b64encode(self.session.get(
+            self.url_code).content).decode()
+        data = {
+            'image': img,
+            'username': self.code_id,
+            'password': self.code_psw,
+            'typeid': 3
+        }
+        result = json_loads(post(
+            "http://api.ttshitu.com/base64", json=data).text)
+        if result['success']:
+            return result["data"]["result"]
+        else:
+            self.log(result["message"])
+            return ""
+
     def checkin(self):
         """
         提交
         """
         headers = {
-            "Host"      : "zlapp.fudan.edu.cn",
-            "Referer"   : "https://zlapp.fudan.edu.cn/site/ncov/fudanDaily?from=history",
-            "DNT"       : "1",
-            "TE"        : "Trailers",
+            "Host": "zlapp.fudan.edu.cn",
+            "Referer": "https://zlapp.fudan.edu.cn/site/ncov/fudanDaily?from=history",
+            "DNT": "1",
+            "TE": "Trailers",
             "User-Agent": self.UA
         }
 
@@ -165,24 +191,31 @@ class Zlapp(Fudan):
         province = self.last_info["province"]
         city = self.last_info["city"]
         district = geo_api_info["addressComponent"].get("district", "")
-
+        print("◉正在识别验证码......")
+        code = self.validate_code()
+        print("◉验证码为:", code)
         self.last_info.update(
-                {
-                    "tw"      : "13",
-                    "province": province,
-                    "city"    : city,
-                    "area"    : " ".join((province, city, district))
-                }
+            {
+                "tw": "13",
+                "province": province,
+                "city": city,
+                "area": " ".join((province, city, district)),
+                "sfzx": "1",  # 是否在校
+                "fxyy": "",  # 返校原因
+                "code": code,
+
+            }
         )
-        #print(self.last_info)
+        # print(self.last_info)
         save = self.session.post(
-                'https://zlapp.fudan.edu.cn/ncov/wap/fudan/save',
-                data=self.last_info,
-                headers=headers,
-                allow_redirects=False)
+            'https://zlapp.fudan.edu.cn/ncov/wap/fudan/save',
+            data=self.last_info,
+            headers=headers,
+            allow_redirects=False)
 
         save_msg = json_loads(save.text)["m"]
         print(save_msg, '\n\n')
+
 
 def get_account():
     """
@@ -190,9 +223,11 @@ def get_account():
     """
     uid = getenv("STD_ID")
     psw = getenv("PASSWORD")
-    if uid != None and psw != None:
+    code_id = getenv("CODE_ID")
+    code_psw = getenv("CODE_PSW")
+    if uid != None and psw != None and code_id != None and code_psw != None:
         print("从环境变量中获取了用户名和密码！")
-        return uid, psw
+        return uid, psw, code_id, code_psw
     print("\n\n请仔细阅读以下日志！！\n请仔细阅读以下日志！！！！\n请仔细阅读以下日志！！！！！！\n\n")
     if os_path.exists("account.txt"):
         print("读取账号中……")
@@ -203,23 +238,32 @@ def get_account():
             sys_exit()
         uid = (raw[0].split(":"))[1].strip()
         psw = (raw[1].split(":"))[1].strip()
+        code_id = (raw[2].split(":"))[1].strip()
+        code_psw = (raw[3].split(":"))[1].strip()
 
     else:
-        print("未找到account.txt, 判断为首次运行, 请接下来依次输入学号密码")
+        print("未找到account.txt, 判断为首次运行, 请接下来依次输入学号密码打码和平台账号密码")
         uid = input("学号：")
         psw = getpass("密码：")
+        code_id = input("打码账号：")
+        code_psw = getpass("打码密码：")
         with open("account.txt", "w") as new:
-            tmp = "uid:" + uid + "\npsw:" + psw + "\n\n\n以上两行冒号后分别写上学号密码，不要加空格/换行，谢谢\n\n请注意文件安全，不要放在明显位置\n\n可以从dailyFudan.exe创建快捷方式到桌面"
+            tmp = "uid:" + uid + "\npsw:" + psw + "\ncode_id:" + code_id + "\ncode_psw:" + code_psw +\
+                "\n\n\n以上四行冒号后分别写上学号密码，不要加空格/换行，谢谢\n\n请注意文件安全，不要放在明显位置\n\n可以从dailyFudan.exe创建快捷方式到桌面"
             new.write(tmp)
         print("账号已保存在目录下account.txt，请注意文件安全，不要放在明显位置\n\n建议拉个快捷方式到桌面")
 
-    return uid, psw
+    return uid, psw, code_id, code_psw
+
+
 if __name__ == '__main__':
-    uid, psw = get_account()
+    uid, psw, code_id, code_psw = get_account()
     # print(uid, psw)
     zlapp_login = 'https://uis.fudan.edu.cn/authserver/login?' \
                   'service=https://zlapp.fudan.edu.cn/site/ncov/fudanDaily'
-    daily_fudan = Zlapp(uid, psw, url_login=zlapp_login)
+    code_url = "https://zlapp.fudan.edu.cn/backend/default/code"
+    daily_fudan = Zlapp(uid, psw, code_id, code_psw,
+                        url_login=zlapp_login, url_code=code_url)
     daily_fudan.login()
 
     daily_fudan.check()
