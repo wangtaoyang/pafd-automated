@@ -6,7 +6,7 @@ from sys import exit as sys_exit
 from getpass import getpass
 import re
 import base64
-
+import os
 
 from requests import session, post
 
@@ -147,6 +147,8 @@ class Zlapp(Fudan):
         print("◉上一次提交地址为:", position['formattedAddress'])
         # print("◉上一次提交GPS为", position["position"])
         # print(last_info)
+        os.environ['TZ'] = 'Asia/Shanghai'
+        time.tzset()
         today = time.strftime("%Y%m%d", time.localtime())
         print("◉今日日期为:", today)
 
