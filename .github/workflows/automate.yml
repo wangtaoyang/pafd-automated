@@ -20,4 +20,4 @@ jobs:
         uses: actions/checkout@v2
 
       - name: run
-        run: STD_ID=${{ secrets.STD_ID }} PASSWORD=${{ secrets.PASSWORD }} CODE_ID=${{ secrets.CODE_ID }} CODE_PSW=${{ secrets.CODE_PSW }} python3 main.py
+        run: tz='asia/shanghai' STD_ID=${{ secrets.STD_ID }} PASSWORD=${{ secrets.PASSWORD }} CODE_ID=${{ secrets.CODE_ID }} CODE_PSW=${{ secrets.CODE_PSW }} python3 main.py
